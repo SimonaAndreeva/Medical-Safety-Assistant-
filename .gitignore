@@ -1,0 +1,25 @@
+# --- Secrets (NEVER COMMIT THESE) ---
+.env
+
+# --- Data & Large Files ---
+data/raw/*
+data/processed/*
+pgdata/
+*.sql
+*.sql.gz
+*.csv
+
+# --- Python ---
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# --- IDE Settings ---
+.vscode/
+.idea/
+
+# --- OS Files ---
+Thumbs.db
+.DS_Store
