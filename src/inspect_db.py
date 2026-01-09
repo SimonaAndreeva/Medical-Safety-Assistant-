@@ -14,16 +14,14 @@ def peek_table(table_name, limit=3):
 print("📊 DATABASE INSPECTION REPORT")
 print("=" * 60)
 
-# 1. Chemicals
+#Chemicals
 peek_table("drugs")
 
-# 2. Safety (The Target for ML)
+#Safety (The Target for ML)
 peek_table("drug_interactions")
 
-# 3. Biology (The Network)
+#Biology (The Network)
 peek_table("drug_targets")
 
-# 4. The New PPI Network (Protein-Protein)
+#The New PPI Network (Protein-Protein)
 peek_table("protein_interactions")
-
-print("\n✅ If you see data in all sections, your dataset is complete.")

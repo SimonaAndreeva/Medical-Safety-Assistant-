@@ -8,11 +8,11 @@ DST_DB_URL = "postgresql://admin:12345@127.0.0.1:5432/medical_safety_db"
 OMNIPATH_URL = "https://omnipathdb.org/interactions"
 
 def load_ppi():
-    print("🔌 Connecting to database...")
+    print("Connecting to database...")
     dst_engine = create_engine(DST_DB_URL)
 
-    # 1. Get Proteins
-    print("📋 Fetching unique proteins from your database...")
+    # Get Proteins
+    print("Fetching unique proteins from database...")
     query_proteins = "SELECT DISTINCT target_uniprot_id FROM drug_targets"
     df_proteins = pd.read_sql(query_proteins, dst_engine)
     
@@ -20,24 +20,23 @@ def load_ppi():
     print(f"   -> Found {len(unique_proteins)} unique protein nodes.")
 
     if not unique_proteins:
-        print("❌ No proteins found! Run load_targets.py first.")
+        print("No proteins found! Run load_targets.py first.")
         return
 
-    # 2. Query OmniPath
-    print("🌍 Querying OmniPath for human interactome...")
+    # Query OmniPath
+    print("Querying OmniPath for human interactome...")
     
     # FIXED PARAMS: Removed 'organism' (default is human) and complex 'fields'
-    # We ask for the standard dataset to avoid API errors.
     params = {
         'format': 'tab',
-        'genesymbols': 'no', # We strictly want UniProt IDs
+        'genesymbols': 'no',
     }
     
     try:
         response = requests.get(OMNIPATH_URL, params=params, timeout=120)
         response.raise_for_status()
     except requests.exceptions.RequestException as e:
-        print(f"❌ Network Error: {e}")
+        print(f"Network Error: {e}")
         return
 
     print("   -> Parsing network data...")
@@ -46,21 +45,21 @@ def load_ppi():
     # Clean column names
     df_ppi.columns = df_ppi.columns.str.strip()
     
-    # Check if we got valid data
+    # Check if the data is valid
     if 'source' not in df_ppi.columns or 'target' not in df_ppi.columns:
-        print(f"❌ ERROR: Unexpected columns: {df_ppi.columns.tolist()}")
+        print(f"ERROR: Unexpected columns: {df_ppi.columns.tolist()}")
         print("   -> API Response Start:", response.text[:200])
         return
 
-    # 3. Filter
-    print("🔍 Filtering for relevant interactions...")
+    # Filter
+    print("Filtering for relevant interactions...")
     
     df_ppi = df_ppi.rename(columns={
         'source': 'protein_a_uniprot',
         'target': 'protein_b_uniprot'
     })
     
-    # Keep only interactions where BOTH proteins are in our set
+    # Keep only interactions where BOTH proteins are in the set
     relevant_mask = (
         df_ppi['protein_a_uniprot'].isin(unique_proteins) & 
         df_ppi['protein_b_uniprot'].isin(unique_proteins)
@@ -76,7 +75,6 @@ def load_ppi():
     if 'is_directed' in df_filtered.columns:
         df_filtered['is_directed'] = df_filtered['is_directed'].astype(bool)
     else:
-        # Default to False if the API didn't give us directionality
         df_filtered['is_directed'] = False 
         
     if 'consensus_score' in df_filtered.columns:
@@ -92,11 +90,11 @@ def load_ppi():
     # Remove duplicates
     df_filtered = df_filtered.drop_duplicates(subset=['protein_a_uniprot', 'protein_b_uniprot'])
 
-    print(f"   -> Found {len(df_filtered)} interactions between your drug targets.")
+    print(f"   -> Found {len(df_filtered)} interactions between drug targets.")
 
-    # 4. Save
+    # Save
     if not df_filtered.empty:
-        print("💾 Saving to 'protein_interactions' table...")
+        print("Saving to 'protein_interactions' table...")
         df_filtered[['protein_a_uniprot', 'protein_b_uniprot', 'source', 'is_directed', 'consensus_score']].to_sql(
             'protein_interactions', 
             dst_engine, 
@@ -105,9 +103,9 @@ def load_ppi():
             method='multi', 
             chunksize=1000
         )
-        print("✅ Success! PPI Network loaded.")
+        print("Success! PPI Network loaded.")
     else:
-        print("⚠️ No interactions found. (Check if your UniProt IDs match the OmniPath format).")
+        print("No interactions found.")
 
 if __name__ == "__main__":
     load_ppi()
