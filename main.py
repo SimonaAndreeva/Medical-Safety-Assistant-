@@ -15,17 +15,17 @@ def main():
         # Chemical Search
         chem_results, err = app_brain.get_similar_drugs(user_input, method="chemical")
         if err:
-            print(f"❌ Error: {err}")
+            print(f"Error: {err}")
             continue
 
-        print(f"\n🧪 Top Chemical Twins for {user_input}:")
+        print(f"\nTop Chemical Twins for {user_input}:")
         for res in chem_results[:5]:
             print(f"  - {res['name']} ({res['score']})")
 
         # Network Search
         net_results, err = app_brain.get_similar_drugs(user_input, method="network")
         if net_results:
-            print(f"\n🧬 Top Biological Cousins for {user_input}:")
+            print(f"\nTop Biological Cousins for {user_input}:")
             for res in net_results[:5]:
                 print(f"  - {res['name']} ({res['score']})")
 
