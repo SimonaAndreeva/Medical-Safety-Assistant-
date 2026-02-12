@@ -1,20 +1,25 @@
+import sys
+import os
+
+# --- PROJECT PATH SETUP ---
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.abspath(os.path.join(current_dir, '../..'))
+sys.path.append(project_root)
+
 import pandas as pd
-import numpy as np
 from sqlalchemy import create_engine
 from rdkit import Chem
 from rdkit.Chem import AllChem
 import pickle
-import os
 
-# --- CONFIGURATION ---
-DB_URL = "postgresql://ml_user:ml123@127.0.0.1:5435/medical_safety_db"
-
-OUTPUT_FILE = "data/processed/chemical_fingerprints.pkl"
+from src.config import settings
 
 def generate_fingerprints():
-    print("🔌 Connecting to database...")
+    print("Connecting to database...")
     try:
-        engine = create_engine(DB_URL)
+        # Use DB_URL from config.py
+        engine = create_engine(settings.DB_URL)
+        
         # Test connection
         with engine.connect() as conn:
             pass
@@ -46,7 +51,7 @@ def generate_fingerprints():
             # Generate 2048-bit vector
             fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
             
-            # Convert to list (Standard Python way, safest for simple ML)
+            # Convert to list
             fp_list = list(fp)
             
             fingerprints.append(fp_list)
@@ -57,12 +62,16 @@ def generate_fingerprints():
     
     print(f"   -> Created Matrix: {X_chemical.shape} (Drugs x Features)")
 
-    # 4. Save
-    os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
-    with open(OUTPUT_FILE, 'wb') as f:
+    # 4. Save using the path from config
+    output_path = settings.CHEMICAL_FEATURES
+    
+    # Ensure directory exists
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    
+    with open(output_path, 'wb') as f:
         pickle.dump(X_chemical, f)
         
-    print(f"Saved to: {OUTPUT_FILE}")
+    print(f"Saved to: {output_path}")
     print("Chemical Similarity Module Complete.")
 
 if __name__ == "__main__":

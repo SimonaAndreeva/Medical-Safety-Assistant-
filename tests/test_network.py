@@ -1,37 +1,38 @@
 import sys
 import os
 
-current_dir = os.path.dirname(os.path.abspath(__file__)) # This file's folder
-project_root = os.path.abspath(os.path.join(current_dir, '../..')) # Go up 2 levels
+# --- PROJECT PATH SETUP ---
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.abspath(os.path.join(current_dir, '..')) # Go up 1 level
 sys.path.append(project_root)
 
 import pandas as pd
 import pickle
 from sqlalchemy import create_engine
-from src.features.similarity_utils import SimilarityEngine
 
-# --- CONFIGURATION ---
-DB_URL = "postgresql://admin:12345@127.0.0.1:5435/medical_safety_db"
-FEATURE_FILE = os.path.join(project_root, "data/processed/network_features.pkl")
+from src.config import settings
+from src.utils.math import SimilarityEngine
+
 TEST_DRUG = "sildenafil" # Viagra
 
 def test_network_similarity():
     print(f"Testing Biological Network Similarity for: {TEST_DRUG.upper()}")
 
     # 1. Load Data
-    print(f"   -> Loading features from: {FEATURE_FILE}")
+    feature_file = settings.NETWORK_FEATURES
+    print(f"   -> Loading features from: {feature_file}")
+    
     try:
-        with open(FEATURE_FILE, 'rb') as f:
+        with open(feature_file, 'rb') as f:
             df_features = pickle.load(f)
     except FileNotFoundError:
-        print("Error: Feature file not found. Did you run 'build_network.py'?")
+        print("Error: Feature file not found. Did you run 'src/features/build_network.py'?")
         return
 
-    # 2. Connect to Database (for names)
-    engine = create_engine(DB_URL)
+    # 2. Connect to DB
+    engine = create_engine(settings.DB_URL)
     df_names = pd.read_sql("SELECT id, generic_name FROM drugs", engine)
     
-    # Create lookups
     name_to_id = {name.lower(): id_ for name, id_ in zip(df_names['generic_name'], df_names['id']) if name}
     id_to_name = dict(zip(df_names['id'], df_names['generic_name']))
 
@@ -47,9 +48,7 @@ def test_network_similarity():
         return
 
     # 4. Calculate Similarity
-    # Using the 'Network Propagation' logic (Tanimoto on Proteins)
     target_vector = df_features.loc[target_id].values.reshape(1, -1)
-    
     scores = SimilarityEngine.calculate_tanimoto(target_vector, df_features.values).flatten()
 
     # 5. Show Results
@@ -64,10 +63,6 @@ def test_network_similarity():
     for drug_id, score in results[:11]:
         name = id_to_name.get(drug_id, "Unknown")
         print(f"{name:<30} | {score:.4f}")
-
-    print("-" * 60)
-    print("Interpretation: A score of 1.0 means identical targets.")
-    print("High scores indicate drugs affecting the same protein modules.")
 
 if __name__ == "__main__":
     test_network_similarity()

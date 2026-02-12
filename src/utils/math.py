@@ -4,6 +4,7 @@ from sklearn.metrics import pairwise_distances
 class SimilarityEngine:
     """
     Core algorithm for calculating drug similarities.
+    Now located in utils so it can be shared across the project.
     """
     
     @staticmethod

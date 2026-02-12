@@ -1,17 +1,29 @@
+import sys
+import os
+
+# --- PROJECT PATH SETUP ---
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.abspath(os.path.join(current_dir, '../..'))
+sys.path.append(project_root)
+
 import pandas as pd
 import numpy as np
 from sqlalchemy import create_engine
 import pickle
-import os
 
-# --- CONFIGURATION ---
-# Use the connection that works for you (Port 5435)
-DB_URL = "postgresql://admin:12345@127.0.0.1:5435/medical_safety_db"
-OUTPUT_FILE = "data/processed/network_features.pkl"
+from src.config import settings
 
 def generate_network_features():
     print("Connecting to database...")
-    engine = create_engine(DB_URL)
+    try:
+        engine = create_engine(settings.DB_URL)
+        # Test connection
+        with engine.connect() as conn:
+            pass
+        print("   -> Connection successful!")
+    except Exception as e:
+        print(f"Connection Failed: {e}")
+        return
 
     # 1. Load Data
     print("Loading Biological Data...")
@@ -26,7 +38,6 @@ def generate_network_features():
     print(f"   -> Loaded {len(df_ppi)} protein interactions.")
 
     # 2. Build the Network Graph (Dictionary)
-    # This allows us to quickly look up neighbors: "Who does Protein A talk to?"
     print("Building the Interactome Graph...")
     ppi_graph = {}
     
@@ -41,7 +52,7 @@ def generate_network_features():
         ppi_graph[p2].add(p1)
 
     # 3. Define the "Universe"
-    # The columns of our matrix will be EVERY unique protein involved
+    # The columns of the matrix will be EVERY unique protein involved
     all_target_proteins = set(df_targets['target_uniprot_id'].unique())
     all_ppi_proteins = set(ppi_graph.keys())
     
@@ -61,7 +72,7 @@ def generate_network_features():
     valid_ids = []
 
     count = 0
-    # For every drug...
+    # For every drug
     for drug_id, targets in drug_groups.items():
         # Start with all zeros
         vec = np.zeros(len(feature_universe), dtype=int)
@@ -93,11 +104,14 @@ def generate_network_features():
     
     print(f"   -> Created Matrix: {X_network.shape} (Drugs x Proteins)")
     
-    os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
-    with open(OUTPUT_FILE, 'wb') as f:
+    # Use output path from Config
+    output_path = settings.NETWORK_FEATURES
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    
+    with open(output_path, 'wb') as f:
         pickle.dump(X_network, f)
 
-    print(f"Saved features to: {OUTPUT_FILE}")
+    print(f"Saved features to: {output_path}")
     print("Biological Network Module Complete.")
 
 if __name__ == "__main__":
