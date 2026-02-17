@@ -82,7 +82,9 @@ def build_network_features():
         p_steady = SimilarityEngine.calculate_rwr(
             transition_matrix=transition_matrix, 
             initial_vector=p0, 
-            restart_prob=0.15 # 15% chance to teleport back to targets
+            restart_prob=settings.RWR_RESTART_PROB,  # <--- Now it looks here!
+            max_iter=settings.RWR_MAX_ITER,          # <--- And here!
+            tol=settings.RWR_TOLERANCE               # <--- And here!
         )
         
         rwr_features[drug_id] = p_steady
