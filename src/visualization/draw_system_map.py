@@ -13,7 +13,7 @@ from sqlalchemy import create_engine, text
 from src.config import settings
 
 def draw_system_map(drug_names):
-    print(f"🗺️  Generating Multi-Relational Map for: {drug_names}...")
+    print(f"Generating Multi-Relational Map for: {drug_names}...")
     
     engine = create_engine(settings.DB_URL)
     
@@ -27,7 +27,7 @@ def draw_system_map(drug_names):
         df_drugs = pd.read_sql_query(query_drugs, conn)
         
         if df_drugs.empty:
-            print("❌ No drugs found.")
+            print("No drugs found.")
             return
 
         drug_ids = tuple(df_drugs['id'].astype(int).tolist()) # Convert to Python ints

@@ -1,10 +1,11 @@
 import numpy as np
-from sklearn.metrics import pairwise_distances
+from scipy.sparse import csr_matrix, diags
+from sklearn.metrics.pairwise import cosine_similarity
 
 class SimilarityEngine:
     """
     Core algorithm for calculating drug similarities.
-    Now located in utils so it can be shared across the project.
+    Located in utils so it can be shared across the project.
     """
     
     @staticmethod
@@ -13,20 +14,14 @@ class SimilarityEngine:
         Computes Tanimoto (Jaccard) Similarity between one target and many others.
         Formula: Intersection / Union
         """
-        # Ensure inputs are boolean (True/False)
         t_bool = target_vector.astype(bool)
         all_bool = all_vectors.astype(bool)
         
-        # 1. Intersection (Bits present in BOTH)
         intersection = np.sum(all_bool & t_bool, axis=1)
-        
-        # 2. Union (Bits present in EITHER)
         sum_target = np.sum(t_bool)
         sum_all = np.sum(all_bool, axis=1)
         
         union = sum_target + sum_all - intersection
-        
-        # Avoid division by zero
         union[union == 0] = 1 
         
         return intersection / union
@@ -35,7 +30,59 @@ class SimilarityEngine:
     def calculate_cosine(target_vector, all_vectors):
         """
         Computes Cosine Similarity (Angle).
-        Useful for continuous vectors (like Biological Embeddings later).
+        Useful for continuous vectors like RWR Biological Embeddings.
         """
-        from sklearn.metrics.pairwise import cosine_similarity
         return cosine_similarity(target_vector, all_vectors).flatten()
+
+    # ==========================================
+    # --- RANDOM WALK WITH RESTART (RWR) ---
+    # ==========================================
+
+    @staticmethod
+    def build_transition_matrix(adj_matrix):
+        """
+        Converts a raw Adjacency Matrix (A) into a column-normalized Transition Matrix (W).
+        """
+        if not isinstance(adj_matrix, csr_matrix):
+            adj_matrix = csr_matrix(adj_matrix)
+        
+        # Sum along columns (axis=0) to find the degree of each node
+        col_sums = np.array(adj_matrix.sum(axis=0)).flatten()
+        
+        # Avoid division by zero for isolated proteins
+        col_sums[col_sums == 0] = 1.0
+        
+        # Create a diagonal matrix of inverted column sums
+        inv_col_sums = diags(1.0 / col_sums)
+        
+        # Multiply to column-normalize: W = A * D^-1
+        transition_matrix = adj_matrix.dot(inv_col_sums)
+        return transition_matrix
+
+    @staticmethod
+    def calculate_rwr(transition_matrix, initial_vector, restart_prob=0.15, max_iter=100, tol=1e-6):
+        """
+        Performs Random Walk with Restart on the Transition Matrix.
+        Returns the steady-state probability vector (The "Biological Footprint").
+        """
+        # Ensure initial vector is a probability distribution (sums to 1)
+        sum_p0 = np.sum(initial_vector)
+        if sum_p0 == 0:
+            return initial_vector # Edge case: Drug has no targets
+            
+        p_0 = initial_vector / sum_p0
+        p_t = p_0.copy()
+        
+        # Iterate until convergence
+        for i in range(max_iter):
+            # The Core RWR Equation
+            p_next = (1 - restart_prob) * transition_matrix.dot(p_t) + (restart_prob * p_0)
+            
+            # Check convergence (L1 norm difference)
+            diff = np.linalg.norm(p_next - p_t, ord=1)
+            if diff < tol:
+                break
+                
+            p_t = p_next
+            
+        return p_t

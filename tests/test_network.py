@@ -3,8 +3,9 @@ import os
 
 # --- PROJECT PATH SETUP ---
 current_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.abspath(os.path.join(current_dir, '..')) # Go up 1 level
+project_root = os.path.abspath(os.path.join(current_dir, '..'))
 sys.path.append(project_root)
+# --------------------------
 
 import pandas as pd
 import pickle
@@ -16,17 +17,15 @@ from src.utils.math import SimilarityEngine
 TEST_DRUG = "sildenafil" # Viagra
 
 def test_network_similarity():
-    print(f"Testing Biological Network Similarity for: {TEST_DRUG.upper()}")
+    print(f"🔎 Testing RWR Biological Network for: {TEST_DRUG.upper()}")
 
     # 1. Load Data
     feature_file = settings.NETWORK_FEATURES
-    print(f"   -> Loading features from: {feature_file}")
-    
     try:
         with open(feature_file, 'rb') as f:
             df_features = pickle.load(f)
     except FileNotFoundError:
-        print("Error: Feature file not found. Did you run 'src/features/build_network.py'?")
+        print("❌ Error: Feature file not found. Run 'build_network.py' first.")
         return
 
     # 2. Connect to DB
@@ -38,28 +37,22 @@ def test_network_similarity():
 
     # 3. Find the Drug
     target_id = name_to_id.get(TEST_DRUG.lower())
-    
-    if not target_id:
-        print(f"'{TEST_DRUG}' not found in the drug database.")
-        return
-        
-    if target_id not in df_features.index:
-        print(f"'{TEST_DRUG}' found, but it has no mapped targets in the network.")
+    if not target_id or target_id not in df_features.index:
+        print(f"❌ '{TEST_DRUG}' not found or has no targets.")
         return
 
-    # 4. Calculate Similarity
+    # 4. Calculate Similarity (NOW USING COSINE!)
     target_vector = df_features.loc[target_id].values.reshape(1, -1)
-    scores = SimilarityEngine.calculate_tanimoto(target_vector, df_features.values).flatten()
+    
+    # -> CHANGED THIS LINE:
+    scores = SimilarityEngine.calculate_cosine(target_vector, df_features.values).flatten()
 
     # 5. Show Results
     results = list(zip(df_features.index, scores))
     results.sort(key=lambda x: x[1], reverse=True)
 
-    print("\nRESULTS: Top 10 Biologically Similar Drugs")
+    print("\n✅ RESULTS: Top 10 Biologically Similar Drugs (RWR + Cosine)")
     print("-" * 60)
-    print(f"{'Drug Name':<30} | {'Network Score':<15}")
-    print("-" * 60)
-
     for drug_id, score in results[:11]:
         name = id_to_name.get(drug_id, "Unknown")
         print(f"{name:<30} | {score:.4f}")

@@ -1,118 +1,102 @@
 import sys
 import os
+import time
 
 # --- PROJECT PATH SETUP ---
 current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.abspath(os.path.join(current_dir, '../..'))
 sys.path.append(project_root)
+# --------------------------
 
 import pandas as pd
 import numpy as np
-from sqlalchemy import create_engine
 import pickle
+from scipy.sparse import csr_matrix
+from sqlalchemy import create_engine
 
 from src.config import settings
+from src.utils.math import SimilarityEngine
 
-def generate_network_features():
-    print("Connecting to database...")
-    try:
-        engine = create_engine(settings.DB_URL)
-        # Test connection
-        with engine.connect() as conn:
-            pass
-        print("   -> Connection successful!")
-    except Exception as e:
-        print(f"Connection Failed: {e}")
-        return
+def build_network_features():
+    print("🧬 Starting Advanced Biological Network Builder (RWR)...")
+    start_time = time.time()
 
-    # 1. Load Data
-    print("Loading Biological Data...")
-    
-    # Get Direct Targets (Drug -> Protein)
-    df_targets = pd.read_sql("SELECT drug_id, target_uniprot_id FROM drug_targets", engine)
-    
-    # Get PPI Network (Protein <-> Protein)
+    # 1. Connect to DB
+    engine = create_engine(settings.DB_URL)
+
+    # 2. Load Data
+    print("   -> Fetching Protein Interactions (PPI) and Drug Targets...")
     df_ppi = pd.read_sql("SELECT protein_a_uniprot, protein_b_uniprot FROM protein_interactions", engine)
-    
-    print(f"   -> Loaded {len(df_targets)} direct drug-target pairs.")
-    print(f"   -> Loaded {len(df_ppi)} protein interactions.")
+    df_targets = pd.read_sql("SELECT drug_id, target_uniprot_id FROM drug_targets", engine)
 
-    # 2. Build the Network Graph (Dictionary)
-    print("Building the Interactome Graph...")
-    ppi_graph = {}
+    # 3. Define the "Biological Universe" (Every unique protein)
+    print("   -> Mapping the Biological Universe...")
+    universe = set(df_ppi['protein_a_uniprot']) \
+               .union(set(df_ppi['protein_b_uniprot'])) \
+               .union(set(df_targets['target_uniprot_id']))
     
-    for _, row in df_ppi.iterrows():
-        p1, p2 = row['protein_a_uniprot'], row['protein_b_uniprot']
-        
-        # Add connection (Bidirectional)
-        if p1 not in ppi_graph: ppi_graph[p1] = set()
-        if p2 not in ppi_graph: ppi_graph[p2] = set()
-        
-        ppi_graph[p1].add(p2)
-        ppi_graph[p2].add(p1)
+    universe = sorted(list(universe))
+    N = len(universe)
+    prot_to_idx = {prot: idx for idx, prot in enumerate(universe)}
+    print(f"      * Total Unique Proteins (Nodes): {N}")
 
-    # 3. Define the "Universe"
-    # The columns of the matrix will be EVERY unique protein involved
-    all_target_proteins = set(df_targets['target_uniprot_id'].unique())
-    all_ppi_proteins = set(ppi_graph.keys())
+    # 4. Build Adjacency Matrix
+    print("   -> Building Sparse Adjacency Matrix...")
+    row_idx = [prot_to_idx[p] for p in df_ppi['protein_a_uniprot']]
+    col_idx = [prot_to_idx[p] for p in df_ppi['protein_b_uniprot']]
     
-    # Combined list of all unique proteins
-    feature_universe = sorted(list(all_target_proteins.union(all_ppi_proteins)))
-    protein_to_index = {prot: i for i, prot in enumerate(feature_universe)}
-    
-    print(f"   -> The Biological Universe consists of {len(feature_universe)} proteins.")
+    # PPIs are undirected: if A interacts with B, B interacts with A
+    rows = np.array(row_idx + col_idx)
+    cols = np.array(col_idx + row_idx)
+    data = np.ones(len(rows))
 
-    # 4. Generate Drug Network Vectors (Propagation)
-    print("Calculating Network Propagation (Expanding targets to neighbors)...")
-    
-    # Group targets by drug
-    drug_groups = df_targets.groupby('drug_id')['target_uniprot_id'].apply(list)
-    
-    network_vectors = []
-    valid_ids = []
+    adj_matrix = csr_matrix((data, (rows, cols)), shape=(N, N))
+    print(f"      * Total Edges Mapped: {adj_matrix.nnz}")
 
-    count = 0
-    # For every drug
-    for drug_id, targets in drug_groups.items():
-        # Start with all zeros
-        vec = np.zeros(len(feature_universe), dtype=int)
+    # 5. Build Transition Matrix for RWR
+    print("   -> Converting to Column-Normalized Transition Matrix...")
+    transition_matrix = SimilarityEngine.build_transition_matrix(adj_matrix)
+
+    # 6. Run Random Walk with Restart for Every Drug
+    print("   -> Simulating Random Walks for Drugs (This may take a moment)...")
+    unique_drugs = df_targets['drug_id'].unique()
+    total_drugs = len(unique_drugs)
+    
+    rwr_features = {}
+    
+    for i, drug_id in enumerate(unique_drugs):
+        # Print progress every 100 drugs
+        if (i + 1) % 100 == 0 or i == 0:
+            print(f"      * Processing drug {i + 1} / {total_drugs}...")
+
+        # Find direct targets
+        targets = df_targets[df_targets['drug_id'] == drug_id]['target_uniprot_id']
         
-        # Set of "Affected" proteins
-        affected_proteins = set(targets) # Start with Direct Targets
-        
-        # Add 1st-Order Neighbors (The "Network" part)
-        for target in targets:
-            if target in ppi_graph:
-                # Add everyone this target talks to
-                affected_proteins.update(ppi_graph[target])
-        
-        # Mark these proteins as "1" in the vector
-        for prot in affected_proteins:
-            if prot in protein_to_index:
-                idx = protein_to_index[prot]
-                vec[idx] = 1
+        # Create initial probability vector (P_0)
+        p0 = np.zeros(N)
+        for t in targets:
+            if t in prot_to_idx:
+                p0[prot_to_idx[t]] = 1.0
                 
-        network_vectors.append(vec)
-        valid_ids.append(drug_id)
+        # Run the RWR Algorithm!
+        p_steady = SimilarityEngine.calculate_rwr(
+            transition_matrix=transition_matrix, 
+            initial_vector=p0, 
+            restart_prob=0.15 # 15% chance to teleport back to targets
+        )
         
-        count += 1
-        if count % 500 == 0:
-            print(f"      ...processed {count} drugs")
+        rwr_features[drug_id] = p_steady
 
-    # 5. Save the Matrix
-    X_network = pd.DataFrame(network_vectors, index=valid_ids, columns=feature_universe)
+    # 7. Save the resulting matrix
+    print(f"   -> Saving continuous RWR embeddings to: {settings.NETWORK_FEATURES}")
+    df_rwr = pd.DataFrame.from_dict(rwr_features, orient='index', columns=universe)
     
-    print(f"   -> Created Matrix: {X_network.shape} (Drugs x Proteins)")
-    
-    # Use output path from Config
-    output_path = settings.NETWORK_FEATURES
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    
-    with open(output_path, 'wb') as f:
-        pickle.dump(X_network, f)
+    os.makedirs(os.path.dirname(settings.NETWORK_FEATURES), exist_ok=True)
+    with open(settings.NETWORK_FEATURES, 'wb') as f:
+        pickle.dump(df_rwr, f)
 
-    print(f"Saved features to: {output_path}")
-    print("Biological Network Module Complete.")
+    elapsed = round(time.time() - start_time, 2)
+    print(f"✅ Biological Network Module Complete! (Took {elapsed} seconds)")
 
 if __name__ == "__main__":
-    generate_network_features()
+    build_network_features()
