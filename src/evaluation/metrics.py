@@ -8,7 +8,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.abspath(os.path.join(current_dir, '../..'))
 sys.path.append(project_root)
 
-from src.services.similarity import DrugSimilarityService
+from src.web.services import DrugSimilarityService
 from src.config import settings
 
 # 🏆 THE GOLD STANDARD BENCHMARK 🏆

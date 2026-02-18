@@ -1,4 +1,4 @@
-from src.services.similarity import DrugSimilarityService
+from src.web.services import DrugSimilarityService
 
 def main():
     # 1. Initialize the AI

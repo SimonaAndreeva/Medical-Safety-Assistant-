@@ -15,7 +15,8 @@ from scipy.sparse import csr_matrix
 from sqlalchemy import create_engine
 
 from src.config import settings
-from src.utils.math import SimilarityEngine
+from src.algorithms.rwr import RWR
+from src.algorithms.similarity_metrics import SimilarityEngine
 
 def build_network_features():
     print("🧬 Starting Advanced Biological Network Builder (RWR)...")
@@ -55,7 +56,7 @@ def build_network_features():
 
     # 5. Build Transition Matrix for RWR
     print("   -> Converting to Column-Normalized Transition Matrix...")
-    transition_matrix = SimilarityEngine.build_transition_matrix(adj_matrix)
+    transition_matrix = RWR.build_transition_matrix(adj_matrix)
 
     # 6. Run Random Walk with Restart for Every Drug
     print("   -> Simulating Random Walks for Drugs (This may take a moment)...")
@@ -79,7 +80,7 @@ def build_network_features():
                 p0[prot_to_idx[t]] = 1.0
                 
         # Run the RWR Algorithm!
-        p_steady = SimilarityEngine.calculate_rwr(
+        p_steady = RWR.calculate_rwr(
             transition_matrix=transition_matrix, 
             initial_vector=p0, 
             restart_prob=settings.RWR_RESTART_PROB,  # <--- Now it looks here!

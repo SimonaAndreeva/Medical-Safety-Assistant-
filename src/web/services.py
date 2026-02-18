@@ -2,7 +2,7 @@ import pandas as pd
 import pickle
 from sqlalchemy import create_engine
 from src.config import settings
-from src.utils.math import SimilarityEngine 
+from src.algorithms.similarity_metrics import SimilarityEngine 
 
 class DrugSimilarityService:
     def __init__(self):
