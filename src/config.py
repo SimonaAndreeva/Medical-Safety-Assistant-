@@ -25,9 +25,9 @@ class Config:
     NETWORK_FEATURES = DATA_DIR / "network_features.pkl"
 
     # ⚙️ --- ML HYPERPARAMETERS --- ⚙️
-    RWR_RESTART_PROB = 0.1  
+    RWR_RESTART_PROB = 0.8  
     RWR_MAX_ITER = 100       
-    RWR_TOLERANCE = 1e-12     
+    RWR_TOLERANCE = 1e-3     
 
 # Singleton instance
 settings = Config()
