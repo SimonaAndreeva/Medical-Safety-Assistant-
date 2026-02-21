@@ -8,12 +8,13 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.abspath(os.path.join(current_dir, '../..'))
 sys.path.append(project_root)
 
-from src.web.services import DrugSimilarityService
 from src.config import settings
+# We now use the HIN Service (The "Super Brain")
+from src.web.hin_service import HINService
 
 # 🏆 THE GOLD STANDARD BENCHMARK 🏆
 # These are undeniable medical facts. Drugs in the same list DO the same thing.
-# Your AI *should* find these connections if the RWR is working.
+# Your AI *should* find these connections if the HIN is working.
 GOLD_STANDARD_FAMILIES = {
     "PDE5 Inhibitors (ED)": ["sildenafil", "tadalafil", "vardenafil", "udenafil"],
     "NSAIDs (Pain)": ["ibuprofen", "naproxen", "diclofenac", "aspirin", "celecoxib"],
@@ -25,16 +26,16 @@ GOLD_STANDARD_FAMILIES = {
 }
 
 def evaluate_model(top_n=20):
-    print(f"🔬 STARTING RWR HYPERPARAMETER EVALUATION")
-    print(f"   Settings: r={settings.RWR_RESTART_PROB}, iter={settings.RWR_MAX_ITER}")
+    print(f"🔬 STARTING HETEROGENEOUS NETWORK (HIN) EVALUATION")
+    print(f"   Settings: r={settings.HIN_RWR_RESTART_PROB} (Restart Prob)")
     print("-" * 60)
 
-    # 1. Load the AI Brain
-    service = DrugSimilarityService()
-    service.load_data()
+    # 1. Load the AI Brain (HIN Service)
+    service = HINService()
+    success = service.load_data()
     
-    if service.network_matrix is None:
-        print("❌ Error: Network models not found. Run 'build_network.py' first.")
+    if not success:
+        print("❌ Error: HIN models not found. Run 'src/pipelines/build_hin_network.py' first.")
         return
 
     total_score = 0
@@ -48,14 +49,14 @@ def evaluate_model(top_n=20):
         
         # Test every drug in the family against the others
         for drug in members:
-            # Skip if drug isn't in our DB
-            if drug not in service.drug_ids:
-                continue
-                
-            # Ask AI for Top N Biological Cousins
-            results, err = service.get_similar_drugs(drug, method="network", top_n=top_n)
+            # Ask AI for Top N Cousins
+            # Note: HINService doesn't need 'method' arg, it only does Network
+            results, err = service.get_similar_drugs(drug, top_n=top_n)
             
+            # If drug not found or error, skip
             if err or not results:
+                # Optional: Print why it failed (e.g. "Drug not found")
+                # print(f"   [Skipped {drug}]: {err}") 
                 continue
 
             # Extract the names of the suggested cousins
@@ -90,17 +91,17 @@ def evaluate_model(top_n=20):
     if total_tests > 0:
         final_accuracy = total_score / total_tests
         print("\n" + "=" * 60)
-        print(f"🎓 FINAL MODEL GRADE (Average Recall @ {top_n})")
+        print(f"🎓 FINAL HIN MODEL GRADE (Average Recall @ {top_n})")
         print(f"📊 ACCURACY: {final_accuracy:.2f}%")
         print("=" * 60)
         
         # Interpretation Guide
         if final_accuracy > 80:
-            print("🌟 EXCELLENT. The RWR is perfectly tuned.")
+            print("🌟 EXCELLENT. This is Thesis Quality.")
         elif final_accuracy > 60:
-            print("✅ GOOD. The model is solid but could be tighter.")
+            print("✅ GOOD. Much better than random guessing.")
         else:
-            print("⚠️ NEEDS TUNING. Try changing 'RWR_RESTART_PROB' in config.py.")
+            print("⚠️ NEEDS TUNING. Check data connections.")
     else:
         print("❌ No tests could be run (check if drugs exist in DB).")
 
