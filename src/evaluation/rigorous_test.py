@@ -9,7 +9,7 @@ project_root = os.path.abspath(os.path.join(current_dir, '../..'))
 sys.path.append(project_root)
 
 from src.config import settings
-from src.web.hin_service import HINService
+from src.models.tier_3_hin.hin_model import HINService
 
 # 🏆 GOLD STANDARD
 GOLD_STANDARD_FAMILIES = {

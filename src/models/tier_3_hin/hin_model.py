@@ -8,11 +8,13 @@ from sqlalchemy import create_engine, text
 
 # Path Setup
 current_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.abspath(os.path.join(current_dir, '../..'))
+project_root = os.path.abspath(os.path.join(current_dir, '../../..')) # <-- Note the extra '..' because we are one folder deeper now
 sys.path.append(project_root)
 
+# Corrected Imports
 from src.config import settings
-from src.algorithms.rwr import RWR
+from src.models.tier_2_network.rwr import RWR
+from src.models.tier_1_similarity.chemical_sim import SimilarityEngine
 
 class HINService:
     """
