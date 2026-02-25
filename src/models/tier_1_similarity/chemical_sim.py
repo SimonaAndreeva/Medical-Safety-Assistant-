@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.sparse import csr_matrix
 from sklearn.metrics.pairwise import cosine_similarity
 
 
@@ -20,41 +21,43 @@ class SimilarityEngine:
     def calculate_tanimoto(target_vectors, all_vectors):
         """
         Computes Tanimoto (Jaccard) Similarity for binary fingerprint vectors.
+        Optimized for Option 3: Sparse Matrix Algebra.
+        Since Morgan fingerprints are ~95% zeroes, sparse multiplication 
+        drastically accelerates the binary T=c/(a+b+c) calculation.
 
         Modes:
             Search Mode: target_vectors is 1D (1 query drug)
-                         -> Returns 1D array of scores against all_vectors
             Matrix Mode: target_vectors is 2D (N drugs)
-                         -> Returns 2D (N x M) pairwise similarity matrix
-
-        Formula: J(q, a) = |q ∩ a| / |q ∪ a|
         """
-        # Convert to binary integers (0 or 1) to enable matrix multiplication
-        t_mat = target_vectors.astype(bool).astype(int)
-        a_mat = all_vectors.astype(bool).astype(int)
+        # Ensure we are working with 2D dense arrays first to avoid shape issues
+        t_dense = np.atleast_2d(target_vectors).astype(bool).astype(int)
+        a_dense = np.atleast_2d(all_vectors).astype(bool).astype(int)
+        
+        is_1d_search = target_vectors.ndim == 1
 
-        # Detect Search Mode (single 1D query vector)
-        is_1d_search = False
-        if t_mat.ndim == 1:
-            is_1d_search = True
-            t_mat = t_mat.reshape(1, -1)  # Promote to 2D for unified math path
+        # Convert to Sparse Compressed Row (CSR) matrices
+        t_csr = csr_matrix(t_dense)
+        a_csr = csr_matrix(a_dense)
 
-        # 1. Intersection via dot product: (N x F) · (F x M) = (N x M)
-        #    Each cell [i][j] counts the number of matching '1' bits
-        intersection = np.dot(t_mat, a_mat.T)
+        # 1. Intersection (c): sparse dot product is instantly calculated 
+        #    by only multiplying the non-zero (1) elements.
+        intersection = t_csr.dot(a_csr.T).toarray()  # Shape: (N, M)
 
-        # 2. Union = |A| + |B| - |A ∩ B|, computed via broadcasting
-        row_sums_t = np.sum(t_mat, axis=1).reshape(-1, 1)  # Shape (N, 1)
-        row_sums_a = np.sum(a_mat, axis=1).reshape(1, -1)  # Shape (1, M)
-        union = row_sums_t + row_sums_a - intersection
+        # 2. Vector Magnitudes (a+c) and (b+c)
+        #    Counting the number of 1s in each vector:
+        t_sums = np.array(t_csr.sum(axis=1))  # Shape: (N, 1)
+        a_sums = np.array(a_csr.sum(axis=1)).T  # Shape: (1, M)
 
-        # Guard: if both vectors are all-zero, yield score=0 not NaN
+        # 3. Union (a+b+c) = (a+c) + (b+c) - c
+        union = t_sums + a_sums - intersection
+
+        # Prevent division by zero for completely empty (zero) vectors
         union[union == 0] = 1.0
 
+        # 4. Tanimoto = Intersection / Union
         result = intersection / union
 
-        # Return flat 1D array for Search Mode, 2D matrix for Matrix Mode
         if is_1d_search:
             return result.flatten()
-
+            
         return result
