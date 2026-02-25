@@ -5,8 +5,15 @@ import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 from rdkit import Chem, DataStructs
 from rdkit.Chem import AllChem
+import sys
 
-# --- PATHS ---
+# --- PATHS & CONFIG ---
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.abspath(os.path.join(current_dir, '../../..'))
+if project_root not in sys.path:
+    sys.path.append(project_root)
+
+from src.config import settings
 PROCESSED_DATA_DIR = "data/processed/"
 PHENO_MATRIX_PATH = os.path.join(PROCESSED_DATA_DIR, "phenotypic_matrix.pkl")
 
@@ -17,16 +24,34 @@ class AdvancedFusionModel:
             self.pheno_matrix = pickle.load(f) # Rows=DrugIDs, Cols=SideEffects
         
         self.known_pheno_ids = set(self.pheno_matrix.index)
+        self._fp_cache = {}  # Upgrade 2: Fingerprint Cache
         print(f"🧬 Fusion Model Initialized with {len(self.known_pheno_ids)} phenotypic drug profiles.")
+
+    def _get_fingerprint(self, smiles):
+        """Helper to compute and cache Morgan fingerprints safely."""
+        if not smiles or not isinstance(smiles, str):
+            return None
+        
+        if smiles in self._fp_cache:
+            return self._fp_cache[smiles]
+            
+        mol = Chem.MolFromSmiles(smiles)
+        if not mol:
+            self._fp_cache[smiles] = None
+            return None
+            
+        fp = AllChem.GetMorganFingerprintAsBitVect(mol, 2, nBits=2048)
+        self._fp_cache[smiles] = fp
+        return fp
 
     def get_chemical_similarity(self, smiles1, smiles2):
         """Calculates Tanimoto similarity for 2D structures."""
-        mol1 = Chem.MolFromSmiles(smiles1)
-        mol2 = Chem.MolFromSmiles(smiles2)
-        if not mol1 or not mol2: return 0.0
+        fp1 = self._get_fingerprint(smiles1)
+        fp2 = self._get_fingerprint(smiles2)
         
-        fp1 = AllChem.GetMorganFingerprintAsBitVect(mol1, 2, nBits=2048)
-        fp2 = AllChem.GetMorganFingerprintAsBitVect(mol2, 2, nBits=2048)
+        if not fp1 or not fp2: 
+            return 0.0
+            
         return DataStructs.TanimotoSimilarity(fp1, fp2)
 
     def get_phenotypic_similarity(self, id1, id2):
@@ -42,7 +67,7 @@ class AdvancedFusionModel:
         union = np.logical_or(vec1, vec2).sum()
         return intersection / union if union > 0 else 0.0
 
-    def predict_fusion_score(self, drug1, drug2, weight_pheno=0.6):
+    def predict_fusion_score(self, drug1, drug2, weight_pheno=None):
         """
         Fuses modalities. Industry standard: weight phenotypic 
         higher if available, as it's closer to clinical reality.
@@ -53,6 +78,10 @@ class AdvancedFusionModel:
         # If no side effect data, rely entirely on chemical
         if s_pheno == 0:
             return s_chem
+            
+        # Use config driven weight, fallback to 0.6 if undefined
+        if weight_pheno is None:
+            weight_pheno = getattr(settings, 'FUSION_WEIGHT_PHENO', 0.6)
             
         # Weighted Fusion (HNAI approach)
         return (weight_pheno * s_pheno) + ((1 - weight_pheno) * s_chem)

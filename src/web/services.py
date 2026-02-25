@@ -90,9 +90,9 @@ class DrugSimilarityService:
             if drug_id not in matrix.index:
                 return None, "Drug has no chemical features."
             
-            target_vec = matrix.loc[drug_id].values.reshape(1, -1)
+            target_vec = self.chemical_matrix.loc[drug_id].values
             # CHEMISTRY USES TANIMOTO (Intersection / Union)
-            scores = SimilarityEngine.calculate_tanimoto(target_vec, matrix.values).flatten()
+            scores = SimilarityEngine.calculate_tanimoto(target_vec, self.chemical_matrix.values)
             
         elif method == "network":
             matrix = self.network_matrix

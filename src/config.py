@@ -26,6 +26,10 @@ class Config:
     HIN_FEATURES = DATA_DIR / "hin_transition_matrix.npz"
 
     # ⚙️ --- ML HYPERPARAMETERS --- ⚙️
+    
+    # 0. FUSION TIER WEIGHTS
+    FUSION_WEIGHT_PHENO = 1.0  # Data-tuned optimal weight (prev 0.6)
+
 
     # 1. PPI-ONLY MODEL (Local Clusters)
     # High probability because we trust direct neighbors in the protein graph.
