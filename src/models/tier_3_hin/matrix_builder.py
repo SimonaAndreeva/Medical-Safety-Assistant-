@@ -13,8 +13,8 @@ project_root = os.path.abspath(os.path.join(current_dir, '../..'))
 sys.path.append(project_root)
 
 from src.config import settings
-from src.algorithms.rwr import RWR
-from src.algorithms.similarity_metrics import SimilarityEngine
+from src.models.tier_2_network.rwr import RWR
+from src.models.tier_1_similarity.chemical_sim import SimilarityEngine
 
 def build_heterogeneous_network():
     print("🧬 STARTING PIPELINE: Build Heterogeneous Information Network (HIN)...")

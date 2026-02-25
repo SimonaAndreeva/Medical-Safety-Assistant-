@@ -12,7 +12,7 @@ from sqlalchemy import create_engine
 
 # Import from the clean structure
 from src.config import settings
-from src.utils.math import SimilarityEngine
+from src.models.tier_1_similarity.chemical_sim import SimilarityEngine
 
 TEST_DRUG = "ibuprofen"
 

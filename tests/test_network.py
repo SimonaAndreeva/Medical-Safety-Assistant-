@@ -12,7 +12,7 @@ import pickle
 from sqlalchemy import create_engine
 
 from src.config import settings
-from src.utils.math import SimilarityEngine
+from src.models.tier_2_network.rwr import RWR
 
 TEST_DRUG = "sildenafil" # Viagra
 
@@ -45,7 +45,7 @@ def test_network_similarity():
     target_vector = df_features.loc[target_id].values.reshape(1, -1)
     
     # -> CHANGED THIS LINE:
-    scores = SimilarityEngine.calculate_cosine(target_vector, df_features.values).flatten()
+    scores = RWR.calculate_cosine(target_vector, df_features.values).flatten()
 
     # 5. Show Results
     results = list(zip(df_features.index, scores))

@@ -2,7 +2,8 @@ import pandas as pd
 import pickle
 from sqlalchemy import create_engine
 from src.config import settings
-from src.algorithms.similarity_metrics import SimilarityEngine 
+from src.models.tier_1_similarity.chemical_sim import SimilarityEngine
+from src.models.tier_2_network.rwr import RWR
 
 class DrugSimilarityService:
     def __init__(self):
@@ -100,7 +101,7 @@ class DrugSimilarityService:
             
             target_vec = matrix.loc[drug_id].values.reshape(1, -1)
             # BIOLOGY USES COSINE (RWR Embeddings)
-            scores = SimilarityEngine.calculate_cosine(target_vec, matrix.values).flatten()
+            scores = RWR.calculate_cosine(target_vec, matrix.values).flatten()
             
         else:
             return None, "Invalid method"
