@@ -48,19 +48,18 @@ def tune_fusion_weights():
     
     full_data, y_true = generate_evaluation_dataset(engine, sample_size=500)
     
-    print("\n🔍 Precomputing modality scores...")
-    s_chem_list = []
-    s_pheno_list = []
+    print("\n🔍 Precomputing modality scores (Vectorized Processing)...")
+    smiles_A = full_data['smiles1'].tolist()
+    smiles_B = full_data['smiles2'].tolist()
+    ids_A = full_data['id1'].tolist()
+    ids_B = full_data['id2'].tolist()
     
-    for _, row in full_data.iterrows():
-        # Using the Model methods to ensure we get caching benefits and logic
-        c_score = model.get_chemical_similarity(row['smiles1'], row['smiles2'])
-        p_score = model.get_phenotypic_similarity(row['id1'], row['id2'])
-        s_chem_list.append(c_score)
-        s_pheno_list.append(p_score)
-        
-    s_chem_arr = np.array(s_chem_list)
-    s_pheno_arr = np.array(s_pheno_list)
+    import time
+    start = time.perf_counter()
+    s_chem_arr = model.get_chemical_similarity(smiles_A, smiles_B)
+    s_pheno_arr = model.get_phenotypic_similarity(ids_A, ids_B)
+    end = time.perf_counter()
+    print(f"✅ Fast Matrix math completed in {(end - start):.4f} seconds!")
     
     weights = np.arange(0.0, 1.1, 0.1)
     
