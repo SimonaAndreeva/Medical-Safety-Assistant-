@@ -15,6 +15,7 @@ if project_root not in sys.path:
     sys.path.append(project_root)
 
 from src.config import settings
+from src.models.tier_1_similarity.binary_similarity import TanimotoEngine, JaccardEngine
 from src.models.tier_1_similarity.chemical_sim import SimilarityEngine
 PROCESSED_DATA_DIR = "data/processed/"
 PHENO_MATRIX_PATH = os.path.join(PROCESSED_DATA_DIR, "phenotypic_matrix.pkl")
@@ -101,24 +102,18 @@ class AdvancedFusionModel:
         if not np.any(query_valid_mask) or not np.any(database_valid_mask):
             return np.zeros(num_queries) if (num_queries == num_database and num_queries > 1) else (results_matrix.flatten() if num_queries==1 and num_database==1 else results_matrix)
 
-        # Extract only the valid rows into sliced CSR matrices
+        # Extract only the valid rows into dense numpy arrays for the JaccardEngine
         query_valid_indices = [i for i in query_indices if i != -1]
         database_valid_indices = [i for i in database_indices if i != -1]
         
-        query_sparse = self.pheno_matrix_sparse[query_valid_indices]
-        database_sparse = self.pheno_matrix_sparse[database_valid_indices]
+        query_phenotype_vectors = self.pheno_matrix_sparse[query_valid_indices].toarray()
+        database_phenotype_vectors = self.pheno_matrix_sparse[database_valid_indices].toarray()
         
-        # Mathematical Intersection & Union 
-        # (Same optimal logic as chemical_sim, tailored for the pheno matrix)
-        shared_phenotypes_count = query_sparse.dot(database_sparse.T).toarray()
-        
-        query_phenotypes_count = np.array(query_sparse.sum(axis=1))
-        database_phenotypes_count = np.array(database_sparse.sum(axis=1)).T
-        
-        total_unique_phenotypes_count = query_phenotypes_count + database_phenotypes_count - shared_phenotypes_count
-        total_unique_phenotypes_count[total_unique_phenotypes_count == 0] = 1.0 # Prevent zero division
-        
-        jaccard_scores = shared_phenotypes_count / total_unique_phenotypes_count
+        # Delegate to JaccardEngine — binary intersection-over-union, same math as Tanimoto
+        jaccard_scores = JaccardEngine.calculate(
+            query_phenotype_vectors=query_phenotype_vectors,
+            database_phenotype_vectors=database_phenotype_vectors
+        )
         
         # Scatter valid results back into the padded zero-matrix
         query_mask_positions = np.where(query_valid_mask)[0]
