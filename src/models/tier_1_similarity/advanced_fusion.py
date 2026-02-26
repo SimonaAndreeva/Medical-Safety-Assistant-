@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 from scipy.sparse import csr_matrix
-from rdkit import Chem, DataStructs
+from rdkit import Chem
 from rdkit.Chem import AllChem
 import sys
 
@@ -50,10 +50,9 @@ class AdvancedFusionModel:
             self._fp_cache[smiles] = zeros
             return zeros
             
-        # Extract RDKit Object and immediately convert to native NumPy Array (1s and 0s)
-        fp_obj = AllChem.GetMorganFingerprintAsBitVect(mol, 2, nBits=2048)
-        fp_arr = np.zeros((1,))
-        DataStructs.ConvertToNumpyArray(fp_obj, fp_arr)
+        # New MorganGenerator API: returns a numpy array directly, no conversion step needed
+        morgan_generator = AllChem.GetMorganGenerator(radius=2, fpSize=2048)
+        fp_arr = morgan_generator.GetFingerprintAsNumPy(mol)
         
         self._fp_cache[smiles] = fp_arr
         return fp_arr
