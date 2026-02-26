@@ -2,10 +2,41 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import precision_recall_curve, auc, roc_auc_score, average_precision_score
 
-def calculate_ddi_metrics(y_true, y_scores):
+def enrichment_factor(y_true, y_scores, top_fraction=0.01):
+    """
+    Enrichment Factor at top K% (EF@K%).
+
+    Pharma standard: measures how many more true positives are in the top
+    K% of ranked predictions vs random selection.
+
+    EF = 1.0 → model is no better than random.
+    EF = 10.0 → top 1% contains 10× more positives than random chance.
+    """
+    y_true = np.array(y_true)
+    y_scores = np.array(y_scores)
+
+    num_total = len(y_scores)
+    num_top = max(1, int(num_total * top_fraction))
+
+    # Rank predictions by score (highest first)
+    top_indices = np.argsort(y_scores)[::-1][:num_top]
+    top_true_positives = y_true[top_indices].sum()
+
+    # Expected true positives if we picked randomly from the same size pool
+    total_positives = y_true.sum()
+    expected_random = total_positives * top_fraction
+
+    if expected_random == 0:
+        return 0.0
+
+    return round(float(top_true_positives / expected_random), 4)
+
+
+def calculate_ddi_metrics(y_true, y_scores, ef_fraction=0.01):
     """
     Core metric engine for the thesis.
     AUPR is the primary indicator of performance in imbalanced DDI tasks.
+    Also computes Enrichment Factor at the specified top fraction (default: 1%).
     """
     # Ensure inputs are numpy arrays
     y_true = np.array(y_true)
@@ -21,10 +52,14 @@ def calculate_ddi_metrics(y_true, y_scores):
     # 3. AP (Average Precision)
     ap = average_precision_score(y_true, y_scores)
 
+    # 4. Enrichment Factor @ top K%
+    ef = enrichment_factor(y_true, y_scores, top_fraction=ef_fraction)
+
     return {
         "AUPR": round(aupr, 4),
         "AUROC": round(auroc, 4),
-        "Avg_Precision": round(ap, 4)
+        "Avg_Precision": round(ap, 4),
+        f"EF@{int(ef_fraction*100)}%": ef
     }
 
 def print_performance_comparison(baseline_metrics, advanced_metrics):
