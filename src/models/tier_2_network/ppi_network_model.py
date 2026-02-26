@@ -1,124 +1,116 @@
+import os
+import pickle
 import numpy as np
-import pandas as pd
-from scipy.sparse import csr_matrix, diags
 from sklearn.metrics.pairwise import cosine_similarity
-from sqlalchemy import create_engine
-import networkx as nx
+import sys
 
-# --- YOUR EXISTING MATH ENGINE (Kept Intact) ---
-class RWR:
-    """Random Walk with Restart (RWR) Algorithm Core Math."""
-    @staticmethod
-    def build_transition_matrix(adj_matrix):
-        if not isinstance(adj_matrix, csr_matrix):
-            adj_matrix = csr_matrix(adj_matrix)
-        col_sums = np.array(adj_matrix.sum(axis=0)).flatten()
-        col_sums[col_sums == 0] = 1.0
-        inv_col_sums = diags(1.0 / col_sums)
-        return adj_matrix.dot(inv_col_sums)
+# Ensure src is in the python path
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.abspath(os.path.join(current_dir, '../../..'))
+if project_root not in sys.path:
+    sys.path.append(project_root)
 
-    @staticmethod
-    def calculate_rwr(transition_matrix, initial_vector, restart_prob=0.15, max_iter=100, tol=1e-6):
-        sum_p0 = np.sum(initial_vector)
-        if sum_p0 == 0:
-            return initial_vector 
-            
-        p_0 = initial_vector / sum_p0
-        p_t = p_0.copy()
-        
-        for i in range(max_iter):
-            p_next = (1 - restart_prob) * transition_matrix.dot(p_t) + (restart_prob * p_0)
-            diff = np.linalg.norm(p_next - p_t, ord=1)
-            if diff < tol:
-                break
-            p_t = p_next
-        return p_t
+from src.config import settings
 
-# --- THE NEW BIOLOGICAL WRAPPER (Tier II) ---
 class PPINetworkModel:
-    def __init__(self, db_url="postgresql://admin:12345@127.0.0.1:5435/medical_safety_db"):
-        self.engine = create_engine(db_url)
-        self.rwr_cache = {} # Cache to save computation time
-        
-        print("Building Protein-Protein Interaction (PPI) Network...")
-        self._build_network()
-
-    def _build_network(self):
-        """Fetches PPIs and prepares the transition matrix."""
-        # 1. Fetch protein edges using the correct schema columns
-        ppi_data = pd.read_sql("SELECT protein_a_uniprot, protein_b_uniprot FROM protein_interactions", self.engine)
-        
-        # 2. Build graph to get nodes and adjacency matrix
-        G = nx.Graph()
-        # Update the zip function to use the correct columns
-        edges = list(zip(ppi_data['protein_a_uniprot'], ppi_data['protein_b_uniprot']))
-        G.add_edges_from(edges)
-        
-        # 3. Create index mappings for the matrix
-        self.nodes = list(G.nodes())
-        self.node_to_idx = {node: idx for idx, node in enumerate(self.nodes)}
-        self.num_nodes = len(self.nodes)
-        
-        # 4. Build Transition Matrix using your RWR class
-        adj_matrix = nx.to_scipy_sparse_array(G, nodelist=self.nodes)
-        self.transition_matrix = RWR.build_transition_matrix(adj_matrix)
-        
-        # 5. Pre-load drug targets to create seed vectors
-        self.drug_targets = pd.read_sql("SELECT drug_id, target_uniprot_id FROM drug_targets", self.engine)
-        
-        print(f"PPI Network built with {self.num_nodes} proteins and {len(edges)} interactions.")
-
-    def get_drug_seed_vector(self, drug_id):
-        """Creates the initial probability vector (p0) for a drug."""
-        targets = self.drug_targets[self.drug_targets['drug_id'] == drug_id]['target_uniprot_id'].tolist()
-        
-        p0 = np.zeros(self.num_nodes)
-        valid_targets = 0
-        
-        for target in targets:
-            if target in self.node_to_idx:
-                idx = self.node_to_idx[target]
-                p0[idx] = 1.0
-                valid_targets += 1
-                
-        return p0, valid_targets
-
-    def get_network_similarity(self, drug1_id, drug2_id):
-        """Calculates Cosine Similarity between the RWR footprints of two drugs."""
-        def get_rwr_footprint(d_id):
-            if d_id in self.rwr_cache:
-                return self.rwr_cache[d_id]
-                
-            p0, target_count = self.get_drug_seed_vector(d_id)
-            if target_count == 0:
-                # If drug has no known targets in our PPI, return zeros
-                footprint = np.zeros(self.num_nodes)
-            else:
-                # Run your math engine
-                footprint = RWR.calculate_rwr(self.transition_matrix, p0)
-                
-            self.rwr_cache[d_id] = footprint
-            return footprint
-
-        # Get footprints
-        fp1 = get_rwr_footprint(drug1_id)
-        fp2 = get_rwr_footprint(drug2_id)
-        
-        # If either drug has no targets, network similarity is 0
-        if np.sum(fp1) == 0 or np.sum(fp2) == 0:
-            return 0.0
+    """
+    Tier 2 — Protein-Protein Interaction (PPI) Network Embedding Model.
+    
+    Loads precomputed Random Walk with Restart (RWR) biological footprints 
+    for drugs and computes vectorized Cosine Similarity.
+    
+    This replaces the slow, on-the-fly graph traversal with a lightning-fast
+    O(1) embedding lookup.
+    """
+    def __init__(self):
+        # 1. Load the precomputed dense RWR embeddings
+        matrix_path = settings.NETWORK_FEATURES
+        if not os.path.exists(matrix_path):
+            raise FileNotFoundError(
+                f"🚨 Precomputed network features not found at {matrix_path}.\n"
+                "Please run `python src/evaluation/precompute_ppi_rwr.py` first."
+            )
             
-        # Cosine similarity between the steady-state probabilities
-        sim = cosine_similarity(fp1.reshape(1, -1), fp2.reshape(1, -1))[0][0]
-        return sim
+        with open(matrix_path, 'rb') as f:
+            data = pickle.load(f)
+            
+        # 2. Extract Data
+        self.drug_ids = data['drug_ids']
+        self.embeddings_matrix = data['vectors']  # Shape: (Num_Drugs, Num_Proteins)
+        
+        # 3. Create O(1) lookup map (Drug ID -> Row Index)
+        self.idx_map = {d_id: idx for idx, d_id in enumerate(self.drug_ids)}
+        
+        print(f"🕸️  Tier 2 PPI Model Initialized with {len(self.drug_ids)} precomputed footprints.")
+
+    def get_network_similarity(self, query_id_list, database_id_list):
+        """
+        Vectorized Cosine Similarity for network embeddings.
+        Supports single IDs, lists of IDs, or matching pairs (returns diagonal).
+        
+        Signature matches Tier 1 models (e.g., TanimotoEngine, JaccardEngine).
+        """
+        # Ensure inputs are lists for batch processing
+        if not isinstance(query_id_list, list): query_id_list = [query_id_list]
+        if not isinstance(database_id_list, list): database_id_list = [database_id_list]
+        
+        num_queries = len(query_id_list)
+        num_database = len(database_id_list)
+        
+        # Map IDs to actual row indices in the dense matrix
+        # If ID is missing (no targets in PPI), return -1
+        query_indices = [self.idx_map.get(d_id, -1) for d_id in query_id_list]
+        database_indices = [self.idx_map.get(d_id, -1) for d_id in database_id_list]
+        
+        # Identify missing drugs
+        query_valid_mask = np.array(query_indices) != -1
+        database_valid_mask = np.array(database_indices) != -1
+        
+        # Pre-allocate output matrix of zeros
+        results_matrix = np.zeros((num_queries, num_database), dtype=np.float32)
+        
+        # If nobody has data, return early
+        if not np.any(query_valid_mask) or not np.any(database_valid_mask):
+            return self._format_output(results_matrix, num_queries, num_database)
+            
+        # Extract valid dense vectors
+        valid_q_idx = [i for i in query_indices if i != -1]
+        valid_d_idx = [i for i in database_indices if i != -1]
+        
+        q_vectors = self.embeddings_matrix[valid_q_idx]
+        d_vectors = self.embeddings_matrix[valid_d_idx]
+        
+        # 🚀 Vectorized Math Engine: Cosine Similarity
+        # Shape: (Valid_Queries, Valid_Database)
+        cosine_scores = cosine_similarity(q_vectors, d_vectors)
+        
+        # Scatter results back into the padded zero-matrix
+        q_mask_positions = np.where(query_valid_mask)[0]
+        d_mask_positions = np.where(database_valid_mask)[0]
+        
+        for i, raw_q in enumerate(q_mask_positions):
+            for j, raw_d in enumerate(d_mask_positions):
+                results_matrix[raw_q, raw_d] = cosine_scores[i, j]
+                
+        return self._format_output(results_matrix, num_queries, num_database)
+        
+    def _format_output(self, matrix, n_q, n_d):
+        """Helper to match Tier 1 return shapes (Diagonal mapping for identical pairs)."""
+        if n_q == n_d and n_q > 1 and matrix.shape == (n_q, n_d):
+            return np.diag(matrix)
+            
+        if n_q == 1 and n_d == 1:
+            return matrix.flatten()[0] # Return single float
+            
+        return matrix.flatten() if n_q == 1 else matrix
 
 if __name__ == "__main__":
-    # Quick test to ensure it runs
+    # Quick Test
     model = PPINetworkModel()
     
-    # Replace these IDs with actual drug IDs from your database that have targets
-    test_d1 = 1  
-    test_d2 = 2  
-    
-    sim_score = model.get_network_similarity(test_d1, test_d2)
-    print(f"\nNetwork Topology Similarity Score: {sim_score:.4f}")
+    # Let's test two drugs from the cache
+    if len(model.drug_ids) >= 2:
+        d1 = model.drug_ids[0]
+        d2 = model.drug_ids[1]
+        score = model.get_network_similarity(d1, d2)
+        print(f"\n✅ Network Topology Similarity Score ({d1} vs {d2}): {score:.4f}")

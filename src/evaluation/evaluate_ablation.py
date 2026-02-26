@@ -33,6 +33,7 @@ if project_root not in sys.path:
 from src.config import settings
 from src.models.tier_1_similarity.binary_similarity import TanimotoEngine, JaccardEngine
 from src.models.tier_1_similarity.advanced_fusion import AdvancedFusionModel
+from src.models.tier_2_network.ppi_network_model import PPINetworkModel
 from src.evaluation.metrics import calculate_ddi_metrics
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -138,6 +139,7 @@ def compute_scores_for_all_conditions(eval_df, model):
     chemical_scores   = np.zeros(n)
     phenotypic_scores = np.zeros(n)
     fused_scores      = np.zeros(n)
+    network_scores    = np.zeros(n)
 
     query_smiles_all    = eval_df['smiles1'].tolist()
     database_smiles_all = eval_df['smiles2'].tolist()
@@ -175,10 +177,19 @@ def compute_scores_for_all_conditions(eval_df, model):
         fused_batch    = model.predict_fusion_score(drugs_query, drugs_database)
         fused_scores[start:end] = np.array(fused_batch).flatten()
 
+        # --- Condition D: PPI RWR Network ---
+        net_matrix = model.ppi_model.get_network_similarity(q_ids, d_ids)
+        if hasattr(net_matrix, '__len__') and len(np.array(net_matrix).shape) == 2:
+            net_batch = np.diag(net_matrix)
+        else:
+            net_batch = np.array(net_matrix).flatten()
+        network_scores[start:end] = net_batch
+
     return {
         'A: Chemical Only':    chemical_scores,
         'B: Phenotypic Only':  phenotypic_scores,
-        'C: Fused':            fused_scores,
+        'C: Tier 1 Fused':     fused_scores,
+        'D: Tier 2 PPI RWR':   network_scores
     }
 
 
@@ -272,8 +283,9 @@ def run_ablation_study():
 
     db_engine = create_engine(settings.DB_URL)
 
-    print("\n📦 Loading AdvancedFusionModel...")
+    print("\n📦 Loading AdvancedFusionModel & PPINetworkModel...")
     model = AdvancedFusionModel()
+    model.ppi_model = PPINetworkModel()  # Attach it temporarily for the eval script
 
     print("\n📥 Loading positive DDI pairs from database...")
     positive_df  = load_positive_pairs(db_engine)
